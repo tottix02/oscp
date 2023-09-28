@@ -1,0 +1,66 @@
+##
+## Escaneo y Enumeracion para OSCP
+## Seccion para Sitios Web
+## Autor: Ernesto Vazquez
+## Fecha: 9/28/203
+## Tottix 
+## info@tottix.com
+##
+
+##
+## ENUMERACION BASICA
+##
+
+1. Abrir el URL con cURL y Firefox, analizar si tenemos un "redirect", versiones, extensiones, revisar el codigo fuente, y puntos de entrada para usuarios. 
+
+2. Escanear con nikto para encontrar Vulnerabilidades communes (CVEs), ejemplo:
+    nikto -h 10.0.0.1 -p 8080 -o nikto.txt
+
+3. Enumerar directorios del sitio con Dirb/Dirbuster/Gobuster/Feroxbuster, ejemplos:
+    feroxbuster -u http://10.0.0.2/ -w /usr/share/wordlists/dirbuster/directory-list-2.3-medium.txt -o ferox_resultado.txt
+    # escaneo ignorando certificados locales.
+    feroxbuster -k -u https://vulnsite.io/ -w /usr/share/wordlists/dirbuster/directory-list-2.3-medium.txt -o ferox_resultado.txt
+    # escaneo con diferente encabezo de cliente.
+    feroxbuster -u https://10.10.10.2/ -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/106.0.0.0 Safari/537.36 Edg/106.0.1370.42" -w /usr/share/wordlists/dirbuster/directory-list-2.3-medium.txt -o ferox_resultado.txt
+
+4. Enumerar directorios y archivos Dirb/Dirbuster/Gobuster/Feroxbuster con extensiones de archivos:
+    feroxbuster -u http://10.0.0.2/ -x php,sh,txt,cgi,asp,aspx,log,xml -w /usr/share/wordlists/dirbuster/directory-list-2.3-medium.txt -o ferox_resultado_con_extensiones.txt
+
+5. En caso de que aplicacion use nombre con dominio y no direccion IP, enumeramos  subdominios con WFUZZ. 
+    wfuzz -c -u http://vulnsite.io -H "Host: FUZZ.vulnsite.io" -w  /usr/share/seclists/Discovery/DNS/subdomains-top1million-110000.txt --hw 26 
+    ## si todos los resultados regresan con codigo de repuesta http 200, entonces tomar nota de la columna de numero de caracteres, y filtra por caracter. ejemplo:
+    wfuzz -c -u http://vulnsite.io -H "Host: FUZZ.vulnsite.io" -w  /usr/share/seclists/Discovery/DNS/subdomains-top1million-110000.txt --hh 5480
+    ## forzar subdominio with una palabra determinado antepuesta. ejemplo:
+    wfuzz -c -u http://dev-01.vulnsite.io -H "Host: dev-FUZZ.vulnsite.io" -w  /usr/share/seclists/Discovery/DNS/subdomains-top1million-110000.txt --hh 5480
+    ## Escribir resultado de WFUZZ a un archivo.
+    wfuzz -f /tmp/output_file,raw 
+
+6. Siempre hay que examinar el tipo de servidor y su version en las respuestas HTTP. poner mucha atencion en los encabezados "Power-by" y "Server".
+    curl -I http://10.0.0.2/
+    curl -k -I https://10.0.0.2/ ## ignore self-signed SSL certificates
+
+7. Si durante tu enumeracion encuentras un sitio de WordPress, entonces enumerar con WPScan. El escaneo predeterminado incluye plugins, themes, timthumbs, config, respaldos, extracciones de base de datos, ids de usuarios y ids de media; todas estas son verificadas para vulnerabilidades comunes. ejemplo:
+    wpscan -u http://10.10.10.2 -o wpscan.txt 
+
+###
+### EXPLOTACION
+###
+
+* Siempre buscamos las versiones de cualquier software en ExploitDB (o Searchsploit). Esto solo sirve para vulnerabilidades comunes (CVEs). ejemplo:
+    searchsploit "WordPress" 
+    searchsploit "Apache 2.4.1" 
+    searchsploit -t "PHP 5" ## busqueda por titulo de exploit
+    searchsploit -x 89912 ## ver exploit 89912 
+    searchsploit -m 89912 ## clonar el exploit 89912 a tu directorio activa.
+
+* Siempre buscamos en Google por posibles exploits, usando versiones y tipo software descubierto durante la enumeracion.
+
+* Cuando que encontramos una pagina para hacer login, siempre intentamos usuario y contrasenas predeterminadas (llamadas default credentials), las buscamos con Google y las intentamos usar.
+
+* Brute-force pagina de Logins con hashcat hashcat y wp-scan (WordPress). ejemplo:
+    hashcat -l admin -P rockyou.txt 10.10.10.2 http-post-form "/path/to/login_form.php:username=^USER^&password=^PASS^:Incorrect Password"
+    wpscan --url http://10.10.10.2 -e u --passwords rockyou.txt
+    
+* Tambien intentar en ataques de inyeccion de SQL, Codigo, Commando, SSRF, SSTI, etc, en todos los lugares donde la aplicacion web espere datos del usuario.
+
+* Analizar todo el trafico con Burpsuite. 
