@@ -1,0 +1,39 @@
+##
+## Metodologia para OSCP
+## Seccion de Brute-Force 
+## Autor: Ernesto Vazquez
+## Fecha: 9/29/203
+## Tottix 
+## info@tottix.com
+##
+
+## Modulos de Hashcat
+## https://hashcat.net/wiki/doku.php?id=example_hashes
+
+# WordPress
+$ hascat -m 400 wp.hash /usr/share/wordlists/rockyou.txt --force
+
+# KeePass
+$ hashcat -m 13400 keepass.hash /usr/share/wordlists/rockyou.txt --force
+
+# Bcrypt $2*$, Blowfish (Unix) 
+$ hashcat -m 3200 hash /usr/share/wordlists/rockyou.txt --force 
+
+# NTLM (Windows)
+$ hashcat -m 1000 ntlm.hash /usr/share/wordlists/rockyou.txt --force 
+
+# NTLMv2 (Windows)
+$ hashcat -m 5600 ntlmv2.hash /usr/share/wordlists/rockyou.txt --force
+
+# AS-REProast
+$ hashcat -m 18200 asrep.hash /usr/share/wordlists/rockyou.txt --force
+
+# Kerberoast
+$ hashcat -m 13100 kerberoast.hash /usr/share/wordlists/rockyou.txt --force
+
+## 
+## Bruteforce con reglas
+##
+
+# Hashcat with Rules.
+$ hashcat -m 18200 as-rep_2_hashes /usr/share/wordlists/rockyou.txt -r /usr/share/hashcat/rules/best64.rule --force
