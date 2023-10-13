@@ -1,0 +1,59 @@
+##
+## Escaneo y Enumeracion para OSCP
+## Seccion para Escalar privilegios en Linux
+## Autor: Ernesto Vazquez
+## Fecha: 10/13/2023
+## Tottix 
+## info@tottix.com
+##
+
+# Enumerar, enumerar y continuar enumerando ...
+
+# Scripts para automatizar enumeracion
+$ linPEAS.sh
+$ unix-privesc-checker standard
+$ linEnum.sh 
+
+# Tenemos que aprender mas acerca del sistema 
+# Revisar versiones del Kernel y modulos del Kernel, comparar con vulnerabilidad comunes.
+$ cat /etc/os-release
+$ cat /etc/issue
+$ uname -a
+$ hostname
+$ lsmod
+$ /sbin/modinfo <modulo>
+
+# Enumerar usuarios y archivos
+$ cat /etc/passwd
+$ find / -writable -type d 2> /dev/null
+$ ls -lah /home
+
+# Enumerar procesos activos, aplicaciones instaladas y tareas agendadas
+$ ps -ef | grep root
+$ ps -aux
+$ dpkg -l
+$ find / -perm u=s -type f 2> /dev/null
+$ /usr/sbin/getcap -r / 2>/dev/null ## usar GTFOBins para encontrar exploits
+$ ls -lah /etc/cron*
+$ crontab -l
+$ grep "CRON" /var/log/syslog
+$ cat /var/log/cron.log
+
+# Enumerate interfaces y rutas de red
+$ ifconfig a
+$ ip a 
+$ route
+
+# Enumerar sistemas que puedan estar montados
+$ mount
+$ car /etc/fstab
+
+# Enumerate historial y otros recursos del usuario
+$ env
+$ cat ~/.bash_history
+$ cat ~/.bashrc
+$ sudo -l
+
+# inpection activa de procesos y trafico de red
+$ watch -n 1 "ps -aux | grep root"
+$ tcpdump -i eth0 -A | grep "pass"
